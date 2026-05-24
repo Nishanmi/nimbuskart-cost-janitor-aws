@@ -1,0 +1,89 @@
+name: Cost Janitor
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  cost-janitor:
+    runs-on: ubuntu-latest
+
+    services:
+      localstack:
+        image: localstack/localstack:3.8.1
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: ec2,s3
+          DEFAULT_REGION: us-east-1
+
+    env:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for LocalStack
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q "running"; then
+              echo "LocalStack is ready"
+              exit 0
+            fi
+            echo "Waiting for LocalStack..."
+            sleep 2
+          done
+          curl -s http://localhost:4566/_localstack/health
+          exit 1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install janitor dependencies
+        run: pip install -r janitor/requirements.txt
+
+      - name: Run cost janitor
+        run: |
+          set +e
+          python janitor/janitor.py --dry-run
+          echo "JANITOR_EXIT_CODE=$?" >> $GITHUB_ENV
+          exit 0
+
+      - name: Upload janitor reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: janitor-reports
+          path: janitor/reports/
+
+      - name: Show markdown report
+        run: cat janitor/reports/report.md
+
+      - name: Fail if janitor found cost issues
+        run: |
+          if [ "$JANITOR_EXIT_CODE" != "0" ]; then
+            echo "Cost janitor found issues. See uploaded reports."
+            exit 1
+          fi
