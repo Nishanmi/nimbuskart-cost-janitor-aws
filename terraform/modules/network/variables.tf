@@ -1,10 +1,19 @@
-variable "project" {}
-variable "environment" {}
-variable "owner" {}
-variable "vpc_cidr" {}
-variable "public_subnet_cidrs" {
-  type = list(string)
+variable "vpc_cidr" {
+  description = "VPC CIDR"
+  type        = string
 }
+
+variable "subnet_cidrs" {
+  description = "Subnet CIDRs"
+  type        = list(string)
+}
+
 variable "azs" {
-  type = list(string)
+  description = "Availability zones"
+  type        = list(string)
+}
+
+variable "common_tags" {
+  description = "Common resource tags"
+  type        = map(string)
 }

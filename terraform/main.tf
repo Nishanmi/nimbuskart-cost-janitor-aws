@@ -13,10 +13,10 @@ provider "aws" {
   region                      = var.aws_region
   access_key                  = "test"
   secret_key                  = "test"
-  s3_use_path_style           = true
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
+  s3_use_path_style           = true
 
   endpoints {
     ec2 = "http://localhost:4566"
@@ -34,21 +34,21 @@ locals {
 }
 
 module "network" {
-  source              = "./modules/network"
-  project             = var.project
-  environment         = var.environment
-  owner               = var.owner
-  vpc_cidr            = var.vpc_cidr
-  public_subnet_cidrs = var.public_subnet_cidrs
-  azs                 = var.azs
+  source = "./modules/network"
+
+  vpc_cidr     = var.vpc_cidr
+  subnet_cidrs = var.public_subnet_cidrs
+  azs          = var.azs
+  common_tags  = local.common_tags
 }
 
 resource "aws_security_group" "web" {
   name        = "${var.project}-${var.environment}-web-sg"
-  description = "Web security group"
+  description = "Web security group for NimbusKart staging"
   vpc_id      = module.network.vpc_id
 
   ingress {
+    description = "HTTP from anywhere"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -56,6 +56,7 @@ resource "aws_security_group" "web" {
   }
 
   ingress {
+    description = "HTTPS from anywhere"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -63,6 +64,7 @@ resource "aws_security_group" "web" {
   }
 
   ingress {
+    description = "SSH from configurable CIDR"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -70,6 +72,7 @@ resource "aws_security_group" "web" {
   }
 
   egress {
+    description = "Allow all outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -82,11 +85,13 @@ resource "aws_security_group" "web" {
 }
 
 resource "aws_instance" "web" {
-  count                  = 2
-  ami                    = "ami-12345678"
-  instance_type          = "t3.micro"
-  subnet_id              = module.network.public_subnet_ids[count.index]
-  vpc_security_group_ids = [aws_security_group.web.id]
+  count = 2
+
+  ami                         = var.ami_id
+  instance_type               = var.instance_type
+  subnet_id                   = module.network.public_subnet_ids[count.index]
+  vpc_security_group_ids      = [aws_security_group.web.id]
+  associate_public_ip_address = true
 
   tags = merge(local.common_tags, {
     Name = "${var.project}-${var.environment}-web-${count.index + 1}"
@@ -95,10 +100,10 @@ resource "aws_instance" "web" {
 }
 
 resource "aws_s3_bucket" "logs" {
-  bucket = lower("${var.project}-${var.environment}-app-logs")
+  bucket = var.logs_bucket_name
 
   tags = merge(local.common_tags, {
-    Name = "${var.project}-${var.environment}-app-logs"
+    Name = var.logs_bucket_name
   })
 }
 
@@ -109,8 +114,6 @@ resource "aws_s3_bucket_versioning" "logs" {
     status = "Enabled"
   }
 }
-
-# S3 lifecycle is documented in README; skipped in LocalStack 3.8.1 due lifecycle API timeout.
 
 resource "aws_ebs_volume" "orphan" {
   availability_zone = var.azs[0]

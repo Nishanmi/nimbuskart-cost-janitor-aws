@@ -1,9 +1,13 @@
 .terraform/
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 terraform.tfvars
+*.pem
+
+.venv/
+venv/
+janitor/.venv/
 __pycache__/
 *.pyc
 .env
-reports/
-.DS_Store
+janitor/reports/
